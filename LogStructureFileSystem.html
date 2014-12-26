@@ -30,7 +30,8 @@
 　　首先回顾一下我们是怎么来写Log文件的，不就是把最新的状态一行一行的写在日志文件的最末尾么（这个联系是我自己YY的）。那么**Log-structured File System**也是一样，就是更新数据的时候直接将数据放在末尾。如下图：  
 　　一开始，我们写入磁盘数据块Foo，然后旁边的A是它的inode：![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-1.png)  
 　　然后，我们再写入块Bar，旁边的A'是inode：![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-2.png)  
-　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-3.png)
+　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：
+![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-3.png)
 
 
 ##2. LFS是怎么来的？
@@ -58,7 +59,44 @@
 这里多说一句，imap本身可能也占用多个磁盘block，故而只需要将更新的那一块imap放在inode后面就可以了。这样又有个问题，imap地址不确定，怎么寻址呢？所以还是需要一个地址确定的区域，里面存储imap的地址就可以了，这个区域称之为**CheckRegion**，这里面存储了imap各个block的物理地址。就可以通过**CheckRegion->imap->inode->file**的方式定位到文件了。  
 ![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/LFS/lfs5.jpg)
 
-- 但是，文件夹怎么处理
+- 但是，文件夹怎么处理?  
+按照FFS的设计，所谓的文件夹无非就是一些文件名和文件inode的映射，在FFS中文件夹被当做普通的文件数据来存储，那么LFS也这么干。于是我们就可以看到 /dir/foo 是这样存储的：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/LFS/lfs6.jpg)  
+具体而言是这样，首先定位到dir文件夹的inode所在的imap，然后根据查找到dir文件夹的inode物理地址，然后找到dir文件夹的物理地址，进而获取foo文件的inode，然后在**CR->imap->inode->foo**。注意到这样设计还有一个意外的好处，就是说文件夹下的文件更新操作是不需要更新文件夹本身的，这也就避免了“递归更新”文件夹的文件夹的文件夹。。。
+
+　　好的，至此，文件定位以及没有问题了。但是每次这样将segment写入空闲磁盘，一直这样下去，哪有那么多磁盘呢？这就涉及到磁盘空间回收(**segment cleaning**)的问题了。  
+　　一般来说，磁盘空间回收大致需要这三步：首先将一些segment读入内存；然后判断segment里面的block数据是否是“存活的”，也就是说文件是否处于最新版本；最后将所有的“存活”文件集中写进segment中，而将剩下的空间回收。
+
+- 如何判断block是否为最新版本？  
+为了实现这个功能，那么就需要知道segment中block的原信息了，比如它所归属的文件inode以及在文件中的位置。这些信息需要存储在segment中的一个称为**segment summary block**的区域中。那么我们就可以查找这个block数据的当前物理地址，比对一下就知道是否是最新版了。当然了，这样一来，最好将imap整个加载到内存中方便查询。  
+当然了，可以改进这个设定，为每个文件设置版本号，每次文件更新版本号递增，将这个版本号存储在segment summary block以及imap中，这样只需要比对一下文件版本号就可以判断整个文件是否是最新版本了。
+
+- 关于segment clean，什么时候执行呢？执行clean达到什么目标就停止呢？怎么选择segment执行clean？以及是否需要重组live file以便获得更好的locality？
+第一个第二个实验表明不太重要，实际操作而言，设置两个阈值，点那个空闲segment数目低于某一阈值后执行clean，当回收使得空闲segment数目高于另一阈值后停止clean。  
+第三个问题很有讲究，事实上，论文中采用的算法是计算每个segment的clean性价比（**cost-benefit**），这个计算公式具体参考论文吧。为此在**CheckRegine**中保存一个segment usuage的表单。  
+第四个问题，也是很有技巧性的地方，论文中的做法是按照存活文件最近一次更改时间的顺序依次写入segment中。
+
+　　至此，描述的差不多了，下面看看两个细节。  
+
+- Check Point
+**Check Region**中包含的数据imap地址以及segment usage等等都是在变化的，所以需要每过一段时间更新一下。正常情况下先将Cache中的segment写入磁盘，然后更新**Check Region**，因为考虑到更新**CR**过程中也可能出现异常，所以用两个timestamp块包裹住真实的**CR**数据，只有当前后两个timestamp一致的时候才认为这个**CR**是正常的。为了避免在更新ＣＲ过程中出现故障导致CR不可用，LFS使用两个CR，交替使用，这样即使故障了，也可以用另一个CR来恢复。
+
+- Crash Recovery
+遇到特殊故障，**LFS**怎么恢复呢？
+首先，寻找到最新的可用CR，这里的“可用”表示该CR的前后timestamp是一致的。然后使用论文中提及的Roll-Followed算法来恢复。这里面有一个“奇怪”的地方，就是说imap的最新版block不都已经在segment里面了么，那么直接用这个更新就可以了嘛！！其实不是的，因为考虑到磁盘写操作的时候imap本身可能没有写正确。。。。
+
+
+　　至此，应该是差不多了，详细的东系统的介绍直接看下面的资料吧。
+
+---
+
+##4. 参考文献
+>1. http://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf  
+>2. http://www.eecs.berkeley.edu/Pubs/TechRpts/1992/CSD-92-696.pdf 
+>3. http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.54.502  
+
+
+
 <!-- markdown end -->
 </div>
 <div class="entry" id="main">
@@ -70,7 +108,8 @@
 <p>　　首先回顾一下我们是怎么来写Log文件的，不就是把最新的状态一行一行的写在日志文件的最末尾么（这个联系是我自己YY的）。那么<strong>Log-structured File System</strong>也是一样，就是更新数据的时候直接将数据放在末尾。如下图： <br>
 　　一开始，我们写入磁盘数据块Foo，然后旁边的A是它的inode：<img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-1.png" alt="" title=""> <br>
 　　然后，我们再写入块Bar，旁边的A'是inode：<img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-2.png" alt="" title=""> <br>
-　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：<img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-3.png" alt="" title=""></p>
+　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：
+<img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-3.png" alt="" title=""></p>
 
 <h2 id="2lfs">2. LFS是怎么来的？</h2>
 
@@ -99,8 +138,42 @@
 <img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/LFS/lfs4.jpg" alt="" title=""> <br>
 这里多说一句，imap本身可能也占用多个磁盘block，故而只需要将更新的那一块imap放在inode后面就可以了。这样又有个问题，imap地址不确定，怎么寻址呢？所以还是需要一个地址确定的区域，里面存储imap的地址就可以了，这个区域称之为<strong>CheckRegion</strong>，这里面存储了imap各个block的物理地址。就可以通过<strong>CheckRegion-&gt;imap-&gt;inode-&gt;file</strong>的方式定位到文件了。 <br>
 <img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/LFS/lfs5.jpg" alt="" title=""></p></li>
-<li><p>但是，文件夹怎么处理</p></li>
+<li><p>但是，文件夹怎么处理? <br>
+按照FFS的设计，所谓的文件夹无非就是一些文件名和文件inode的映射，在FFS中文件夹被当做普通的文件数据来存储，那么LFS也这么干。于是我们就可以看到 /dir/foo 是这样存储的： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/LFS/lfs6.jpg" alt="" title=""> <br>
+具体而言是这样，首先定位到dir文件夹的inode所在的imap，然后根据查找到dir文件夹的inode物理地址，然后找到dir文件夹的物理地址，进而获取foo文件的inode，然后在<strong>CR-&gt;imap-&gt;inode-&gt;foo</strong>。注意到这样设计还有一个意外的好处，就是说文件夹下的文件更新操作是不需要更新文件夹本身的，这也就避免了“递归更新”文件夹的文件夹的文件夹。。。</p>
+
+<p>　　好的，至此，文件定位以及没有问题了。但是每次这样将segment写入空闲磁盘，一直这样下去，哪有那么多磁盘呢？这就涉及到磁盘空间回收(<strong>segment cleaning</strong>)的问题了。 <br>
+　　一般来说，磁盘空间回收大致需要这三步：首先将一些segment读入内存；然后判断segment里面的block数据是否是“存活的”，也就是说文件是否处于最新版本；最后将所有的“存活”文件集中写进segment中，而将剩下的空间回收。</p></li>
+<li><p>如何判断block是否为最新版本？ <br>
+为了实现这个功能，那么就需要知道segment中block的原信息了，比如它所归属的文件inode以及在文件中的位置。这些信息需要存储在segment中的一个称为<strong>segment summary block</strong>的区域中。那么我们就可以查找这个block数据的当前物理地址，比对一下就知道是否是最新版了。当然了，这样一来，最好将imap整个加载到内存中方便查询。 <br>
+当然了，可以改进这个设定，为每个文件设置版本号，每次文件更新版本号递增，将这个版本号存储在segment summary block以及imap中，这样只需要比对一下文件版本号就可以判断整个文件是否是最新版本了。</p></li>
+<li><p>关于segment clean，什么时候执行呢？执行clean达到什么目标就停止呢？怎么选择segment执行clean？以及是否需要重组live file以便获得更好的locality？
+第一个第二个实验表明不太重要，实际操作而言，设置两个阈值，点那个空闲segment数目低于某一阈值后执行clean，当回收使得空闲segment数目高于另一阈值后停止clean。 <br>
+第三个问题很有讲究，事实上，论文中采用的算法是计算每个segment的clean性价比（<strong>cost-benefit</strong>），这个计算公式具体参考论文吧。为此在<strong>CheckRegine</strong>中保存一个segment usuage的表单。 <br>
+第四个问题，也是很有技巧性的地方，论文中的做法是按照存活文件最近一次更改时间的顺序依次写入segment中。</p>
+
+<p>　　至此，描述的差不多了，下面看看两个细节。  </p></li>
+<li><p>Check Point
+<strong>Check Region</strong>中包含的数据imap地址以及segment usage等等都是在变化的，所以需要每过一段时间更新一下。正常情况下先将Cache中的segment写入磁盘，然后更新<strong>Check Region</strong>，因为考虑到更新<strong>CR</strong>过程中也可能出现异常，所以用两个timestamp块包裹住真实的<strong>CR</strong>数据，只有当前后两个timestamp一致的时候才认为这个<strong>CR</strong>是正常的。为了避免在更新ＣＲ过程中出现故障导致CR不可用，LFS使用两个CR，交替使用，这样即使故障了，也可以用另一个CR来恢复。</p></li>
+<li><p>Crash Recovery
+遇到特殊故障，<strong>LFS</strong>怎么恢复呢？
+首先，寻找到最新的可用CR，这里的“可用”表示该CR的前后timestamp是一致的。然后使用论文中提及的Roll-Followed算法来恢复。这里面有一个“奇怪”的地方，就是说imap的最新版block不都已经在segment里面了么，那么直接用这个更新就可以了嘛！！其实不是的，因为考虑到磁盘写操作的时候imap本身可能没有写正确。。。。</p>
+
+<p>　　至此，应该是差不多了，详细的东系统的介绍直接看下面的资料吧。</p></li>
 </ul>
+
+<hr>
+
+<h2 id="4">4. 参考文献</h2>
+
+<blockquote>
+  <ol>
+  <li>http://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf  </li>
+  <li>http://www.eecs.berkeley.edu/Pubs/TechRpts/1992/CSD-92-696.pdf </li>
+  <li>http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.54.502  </li>
+  </ol>
+</blockquote>
 <!-- content end -->
 </div>
 <br>
