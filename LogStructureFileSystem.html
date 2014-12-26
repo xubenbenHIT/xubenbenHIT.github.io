@@ -30,7 +30,7 @@
 　　首先回顾一下我们是怎么来写Log文件的，不就是把最新的状态一行一行的写在日志文件的最末尾么（这个联系是我自己YY的）。那么**Log-structured File System**也是一样，就是更新数据的时候直接将数据放在末尾。如下图：  
 　　一开始，我们写入磁盘数据块Foo，然后旁边的A是它的inode：![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-1.png)  
 　　然后，我们再写入块Bar，旁边的A'是inode：![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-2.png)  
-　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：
+　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：   
 
 ![](http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-3.png)
 
@@ -109,7 +109,7 @@
 <p>　　首先回顾一下我们是怎么来写Log文件的，不就是把最新的状态一行一行的写在日志文件的最末尾么（这个联系是我自己YY的）。那么<strong>Log-structured File System</strong>也是一样，就是更新数据的时候直接将数据放在末尾。如下图： <br>
 　　一开始，我们写入磁盘数据块Foo，然后旁边的A是它的inode：<img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-1.png" alt="" title=""> <br>
 　　然后，我们再写入块Bar，旁边的A'是inode：<img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-2.png" alt="" title=""> <br>
-　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：</p>
+　　最后，我们更新数据块Foo，获得Foo'，这时候我们将其写回磁盘，就变成这样子：   </p>
 
 <p><img src="http://7te99v.com1.z0.glb.clouddn.com/blog/LFS/log-3.png" alt="" title=""></p>
 
