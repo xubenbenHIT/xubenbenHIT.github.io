@@ -29,7 +29,7 @@
 ##1. 硬盘
 　　硬盘的基础知识就不赘述了，什么磁头磁道扇区等等啦，看下图一目了然，不了然的话自己看书去。  
 
-　　　　![磁盘](http://7te99v.com1.z0.glb.clouddn.com/@/blog/testsectors-and-clusters1.png)    
+　　　　![磁盘](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/sectors-and-clusters1.png)    
 　　然后有一点需要明确一下，那就是磁盘保证对于扇区的更新操作都是**原子**的。每次写扇区要么全写进去了要么全没写进去。  
 　　下面写一些磁盘的调度算法吧。调度嘛，就是说如果有多个请求，磁盘怎么依次处理这些请求。有一个大的准则，持续时间短的请求先执行(**shortest job first**)，这个也很好理解，毕竟使得所有请求的平均等待时间最小。但是，这个很难做到，因为很难预先知道一个请求执行所需要的时间。于是乎就有了下面的近似算法了:
 
@@ -46,7 +46,40 @@
 　　首先由OS按照自己的调度算法给出几个候选人，然后交由磁盘自己的调度算法（**SPTF**）来具体调度；其次，磁盘调度还会做**I/O merging**操作，比如说有两个请求分别请求两个磁盘块，而这两个磁盘块之间是相邻的，于是乎就可以将这两个磁盘请求合并；最后，磁盘也并不是说只要有请求就不会休息，事实上，可能稍微等等会更好(**Anticipatory disk scheduling**)，当然了，这些设计都需要非常注意技巧，不是那么简单的，这里有个概念就可以了。
 
 ##2.  廉价磁盘冗余阵列(RAIDs)  
- 　　**RAID**的英文全称是**Redundant Arrays of Inexpensive Disks**。磁盘阵列就是将几个磁盘连接在一起，用户可以并行访问这些磁盘，从而提高效率。而冗余阵列这个设计的主要目的就是在于通过提供某种形式的冗余来增强阵列的安全性，不至于说很多磁盘只要有一个坏了就会对数据造成损失。
+ 　　**RAID**的英文全称是**Redundant Arrays of Inexpensive Disks**。磁盘阵列就是将几个磁盘连接在一起，用户可以并行访问这些磁盘，从而提高效率。而冗余阵列这个设计的主要目的就是在于通过提供某种形式的冗余来增强阵列的安全性，不至于说很多磁盘只要有一个坏了就会对数据造成损失。  
+　　直接来吧，下面是**RAID0,RAID1,RAID4,RAID5**： 
+
+ - **RAID0**  
+  这个最简单了，原始的阵列，压根没有冗余，所以任意一个磁盘坏了数据就会出问题，直接上图了。图中的A,B,C,D等等指的是磁盘块，下同。  
+　　　　![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid-0.png)  
+
+ - **RAID1**   
+这个呢，其实就是通常意义上的镜像，分为两种，下面这个是**RAID10**，
+　　　　![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid10-6disks.png)    
+这个是**RAID01**，  
+　　　　![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid01-6disks.png)  
+看得出来区别吧，镜像的设计比较可靠，至少来说一个磁盘坏了没有什么关系，而最理想的情况下一半数目的磁盘坏了都没事。  
+
+ - **RAID4**  
+  先直接看图吧：  
+　　　　![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid4.png)    
+哈哈，多了一个校验磁盘，这个盘的数据是怎么来的呢？前三个磁盘的数据按照 位异或 的操作就可以计算出来校验磁盘的数据了。这样有个好处，就是说任一磁盘损坏了，我们都可以利用剩下的三个磁盘通过 位异或 操作来恢复，厉害吧。但是这样设计有个缺点，每次写数据的时候需要同时也更新对应的校验磁盘中的数据，而言将校验块统一放置于校验磁盘中，也就意味着每次写操作都需要访问校验磁盘，如此一来，写操作的并行就不存在了，于是，聪明的人民设计了**RAID5**。  
+
+ - **RAID5**  
+  先直接看图吧：  
+　　　　![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid-5.png)    
+
+　　下面来说说这几个级别的RAID的读写效率吧，抗损坏能力之前已经说了。这个吧，说起来太复杂了，我会在后面留下参考资料，这里就直接给出结论了，对照着看吧。
+　　　　![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/RAID.jpg)
+
+
+##3.  参考文献 
+
+>1. http://pages.cs.wisc.edu/~remzi/OSTEP/file-raid.pdf  
+>2. http://pages.cs.wisc.edu/~remzi/OSTEP/file-disks.pdf  
+>3. http://www.thegeekstuff.com/2010/08/raid-levels-tutorial/
+>4. http://www.thegeekstuff.com/2011/10/raid10-vs-raid01/  
+>5. http://www.thegeekstuff.com/2011/11/raid2-raid3-raid4-raid6/
 <!-- markdown end -->
 </div>
 <div class="entry" id="main">
@@ -57,7 +90,7 @@
 
 <p>　　硬盘的基础知识就不赘述了，什么磁头磁道扇区等等啦，看下图一目了然，不了然的话自己看书去。  </p>
 
-<p>　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/testsectors-and-clusters1.png" alt="磁盘" title=""> <br>
+<p>　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/sectors-and-clusters1.png" alt="磁盘" title=""> <br>
 　　然后有一点需要明确一下，那就是磁盘保证对于扇区的更新操作都是<strong>原子</strong>的。每次写扇区要么全写进去了要么全没写进去。 <br>
 　　下面写一些磁盘的调度算法吧。调度嘛，就是说如果有多个请求，磁盘怎么依次处理这些请求。有一个大的准则，持续时间短的请求先执行(<strong>shortest job first</strong>)，这个也很好理解，毕竟使得所有请求的平均等待时间最小。但是，这个很难做到，因为很难预先知道一个请求执行所需要的时间。于是乎就有了下面的近似算法了:</p>
 
@@ -74,7 +107,42 @@
 
 <h2 id="2raids">2.  廉价磁盘冗余阵列(RAIDs)</h2>
 
-<p>　　<strong>RAID</strong>的英文全称是<strong>Redundant Arrays of Inexpensive Disks</strong>。磁盘阵列就是将几个磁盘连接在一起，用户可以并行访问这些磁盘，从而提高效率。而冗余阵列这个设计的主要目的就是在于通过提供某种形式的冗余来增强阵列的安全性，不至于说很多磁盘只要有一个坏了就会对数据造成损失。</p>
+<p>　　<strong>RAID</strong>的英文全称是<strong>Redundant Arrays of Inexpensive Disks</strong>。磁盘阵列就是将几个磁盘连接在一起，用户可以并行访问这些磁盘，从而提高效率。而冗余阵列这个设计的主要目的就是在于通过提供某种形式的冗余来增强阵列的安全性，不至于说很多磁盘只要有一个坏了就会对数据造成损失。 <br>
+　　直接来吧，下面是<strong>RAID0,RAID1,RAID4,RAID5</strong>： </p>
+
+<ul>
+<li><p><strong>RAID0</strong> <br>
+这个最简单了，原始的阵列，压根没有冗余，所以任意一个磁盘坏了数据就会出问题，直接上图了。图中的A,B,C,D等等指的是磁盘块，下同。 <br>
+　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid-0.png" alt="" title="">  </p></li>
+<li><p><strong>RAID1</strong> <br>
+这个呢，其实就是通常意义上的镜像，分为两种，下面这个是<strong>RAID10</strong>，
+　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid10-6disks.png" alt="" title=""> <br>
+这个是<strong>RAID01</strong>， <br>
+　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid01-6disks.png" alt="" title=""> <br>
+看得出来区别吧，镜像的设计比较可靠，至少来说一个磁盘坏了没有什么关系，而最理想的情况下一半数目的磁盘坏了都没事。  </p></li>
+<li><p><strong>RAID4</strong> <br>
+先直接看图吧： <br>
+　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid4.png" alt="" title=""> <br>
+哈哈，多了一个校验磁盘，这个盘的数据是怎么来的呢？前三个磁盘的数据按照 位异或 的操作就可以计算出来校验磁盘的数据了。这样有个好处，就是说任一磁盘损坏了，我们都可以利用剩下的三个磁盘通过 位异或 操作来恢复，厉害吧。但是这样设计有个缺点，每次写数据的时候需要同时也更新对应的校验磁盘中的数据，而言将校验块统一放置于校验磁盘中，也就意味着每次写操作都需要访问校验磁盘，如此一来，写操作的并行就不存在了，于是，聪明的人民设计了<strong>RAID5</strong>。  </p></li>
+<li><p><strong>RAID5</strong> <br>
+先直接看图吧： <br>
+　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/raid-5.png" alt="" title="">    </p>
+
+<p>　　下面来说说这几个级别的RAID的读写效率吧，抗损坏能力之前已经说了。这个吧，说起来太复杂了，我会在后面留下参考资料，这里就直接给出结论了，对照着看吧。
+　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/HardDiskAndRAID/RAID.jpg" alt="" title=""></p></li>
+</ul>
+
+<h2 id="3">3.  参考文献</h2>
+
+<blockquote>
+  <ol>
+  <li>http://pages.cs.wisc.edu/~remzi/OSTEP/file-raid.pdf  </li>
+  <li>http://pages.cs.wisc.edu/~remzi/OSTEP/file-disks.pdf  </li>
+  <li>http://www.thegeekstuff.com/2010/08/raid-levels-tutorial/</li>
+  <li>http://www.thegeekstuff.com/2011/10/raid10-vs-raid01/  </li>
+  <li>http://www.thegeekstuff.com/2011/11/raid2-raid3-raid4-raid6/</li>
+  </ol>
+</blockquote>
 <!-- content end -->
 </div>
 <br>
