@@ -29,7 +29,21 @@
 ##1. 硬盘
 　　硬盘的基础知识就不赘述了，什么磁头磁道扇区等等啦，看下图一目了然，不了然的话自己看书去。  
 
-　　　　![磁盘](http://7te99v.com1.z0.glb.clouddn.com/@/blog/testsectors-and-clusters1.png)  
+　　　　![磁盘](http://7te99v.com1.z0.glb.clouddn.com/@/blog/testsectors-and-clusters1.png)    
+　　然后有一点需要明确一下，那就是磁盘保证对于扇区的更新操作都是**原子**的。每次写扇区要么全写进去了要么全没写进去。  
+　　下面写一些磁盘的调度算法吧。调度嘛，就是说如果有多个请求，磁盘怎么依次处理这些请求。有一个大的准则，持续时间短的请求先执行(**shortest job first**)，这个也很好理解，毕竟使得所有请求的平均等待时间最小。但是，这个很难做到，因为很难预先知道一个请求执行所需要的时间。于是乎就有了下面的近似算法了:
+
+1. **Shortest Seek Time First(SSTF)**  
+　　这个就是，下一次执行的磁盘命令是选择最近磁道上的请求命令，但是这个也很难做到，因为操作系统根本看不见磁道啊，它也不知道磁盘的空间几何分布，所以实际上有个替代的，**nearst-block-first(NBF)**，物理地址最相近的最先执行。  
+　　听起来这个**NBF调度**应该是不错的，但是有一个特殊情况，就是说距离当前磁头位置比较远的那个磁盘请求可能“永远”也没法被调度到。这就是调度中经常需要考虑的“饥饿”问题。  
+
+
+2. **Elevator**  
+　　这就是升降机算法了。将当前所有的磁盘请求命令按照**NBF**调度依次执行，执行过程中收到的磁盘请求暂时不处理。这就解决了上面的饥饿问题了。
+
+3. **Shortest Positioning Time First**
+　　这个呢，是考虑到了实际的磁盘寻址时间，因为你物理地址相近不代表磁头寻址所需时间短，还得考虑一个磁盘转向问题
+
 <!-- markdown end -->
 </div>
 <div class="entry" id="main">
@@ -40,7 +54,19 @@
 
 <p>　　硬盘的基础知识就不赘述了，什么磁头磁道扇区等等啦，看下图一目了然，不了然的话自己看书去。  </p>
 
-<p>　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/testsectors-and-clusters1.png" alt="磁盘" title="">  </p>
+<p>　　　　<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/testsectors-and-clusters1.png" alt="磁盘" title=""> <br>
+　　然后有一点需要明确一下，那就是磁盘保证对于扇区的更新操作都是<strong>原子</strong>的。每次写扇区要么全写进去了要么全没写进去。 <br>
+　　下面写一些磁盘的调度算法吧。调度嘛，就是说如果有多个请求，磁盘怎么依次处理这些请求。有一个大的准则，持续时间短的请求先执行(<strong>shortest job first</strong>)，这个也很好理解，毕竟使得所有请求的平均等待时间最小。但是，这个很难做到，因为很难预先知道一个请求执行所需要的时间。于是乎就有了下面的近似算法了:</p>
+
+<ol>
+<li><p><strong>Shortest Seek Time First(SSTF)</strong> <br>
+　　这个就是，下一次执行的磁盘命令是选择最近磁道上的请求命令，但是这个也很难做到，因为操作系统根本看不见磁道啊，它也不知道磁盘的空间几何分布，所以实际上有个替代的，<strong>nearst-block-first(NBF)</strong>，物理地址最相近的最先执行。 <br>
+　　听起来这个<strong>NBF调度</strong>应该是不错的，但是有一个特殊情况，就是说距离当前磁头位置比较远的那个磁盘请求可能“永远”也没法被调度到。这就是调度中经常需要考虑的“饥饿”问题。  </p></li>
+<li><p><strong>Elevator</strong> <br>
+　　这就是升降机算法了。将当前所有的磁盘请求命令按照<strong>NBF</strong>调度依次执行，执行过程中收到的磁盘请求暂时不处理。这就解决了上面的饥饿问题了。</p></li>
+<li><p><strong>Shortest Positioning Time First</strong>
+　　这个呢，是考虑到了实际的磁盘寻址时间，因为你物理地址相近不代表磁头寻址所需时间短，还得考虑一个磁盘转向问题</p></li>
+</ol>
 <!-- content end -->
 </div>
 <br>
