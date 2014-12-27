@@ -34,7 +34,38 @@
 ##3. FSCK
 不准备详细介绍这个方法，一句话总结：“丢了一把钥匙，我却要翻遍整个屋子”。
 ##4. Journaling
-其实这个又被称作**Write-Ahead Logging**，跟之前说到的Log-Structure的思想差不多，也就是在更新文件状态前先写数据，这两者有着明显的时间先后顺序。
+其实这个又被称作**Write-Ahead Logging**，跟之前说到的Log-Structure的思想差不多，也就是在更新文件状态前先写数据，这两者有着严格的时间先后顺序。简单来说就是先把数据写入磁盘中的Journaling中，确保写入完成之后再将数据写入到它们最终的地址同时更新状态表明写入成功。
+
+- 首先看看这个Journaling跟文件系统是怎么共存在磁盘的。如下图：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling7.PNG)  
+好了，下面正式介绍这个操作吧。
+- data journaling  
+假设我们现在要往磁盘里面写入inode，bitmap以及一个datablock，那么为了确保安全，我们先将这些数据写入磁盘的Journaling中，同时我们存入这个操作的元数据，结果是这样子的：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling1.PNG)  
+其中的**TxB**表示translation begin，里面存储了操作的元数据，比如inode、bitmap、datanode的真实目的地址（就是最终要把这些数据存在哪儿）以及某种形式的Transection ID(**TID**)；**TxE**表明transection end，里面当然也包含了TID了。
+那么整个的写入操作的过程是这样的:
+ - **Journal write**：将上面提到的那个结果TxB和TxW包装的数据写入磁盘的Journaling区域，并且等候操作的完成；
+ - **Checkpoint**: 将数据写入到它们最终目的地。
+
+- 一个问题  
+上面这么操作可行么？答案是不可以，因为真实写操作的时候，磁盘内部可能因为调度而将写的顺序改变，也就是说并不一定是先写TxB，然后Inode 等等，所以可能出现磁盘除了data block外的结果块写完了，然后再去写data block而在这个过程中挂了。这样一来Journaling就认为希望完成了，而实际上却没有。  
+为了解决这个问题，只能分步写了，见下图：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling2.PNG)  
+ - Journal write: 写传输内容（包括TxB，metadata以及data），等候完成；
+ - Journal commit：写TxE，等候完成；
+ - Checkpoint：同上
+- Journaling空间管理  
+按照上面的操作，Journaling空间迟早被耗尽，所以怎么办，必须有空间回收机制。所以呢，就把整个Journaling当做一个环形存储，空间到头了就从头开始写。为了便于管理，新增一个Journal Super Block，见下图:  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling3.PNG)  
+那么什么时候回收呢？很简单，每次checkpoint之后那些数据就没用了，所以就checkpoint之后回收吧。    
+- 效率？
+按照上面的操作应该是可以执行了，但是效率是个问题，因为每个写操作都需要写两次，第一次写入journaling，然后再写到最终目的地。为了提高效率，就考虑直接将data写入到最终目的地。那么问题来了，什么时候写data。必须在Journal commit之前！！  
+ - data write:
+ - Journal metadata write
+ - Journal commit
+ - checkpoint metadata
+ - free
+其实
 <!-- markdown end -->
 </div>
 <div class="entry" id="main">
@@ -55,7 +86,41 @@
 
 <h2 id="4journaling">4. Journaling</h2>
 
-<p>其实这个又被称作<strong>Write-Ahead Logging</strong>，跟之前说到的Log-Structure的思想差不多，也就是在更新文件状态前先写数据，这两者有着明显的时间先后顺序。</p>
+<p>其实这个又被称作<strong>Write-Ahead Logging</strong>，跟之前说到的Log-Structure的思想差不多，也就是在更新文件状态前先写数据，这两者有着严格的时间先后顺序。简单来说就是先把数据写入磁盘中的Journaling中，确保写入完成之后再将数据写入到它们最终的地址同时更新状态表明写入成功。</p>
+
+<ul>
+<li>首先看看这个Journaling跟文件系统是怎么共存在磁盘的。如下图： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling7.PNG" alt="" title=""> <br>
+好了，下面正式介绍这个操作吧。</li>
+<li><p>data journaling <br>
+假设我们现在要往磁盘里面写入inode，bitmap以及一个datablock，那么为了确保安全，我们先将这些数据写入磁盘的Journaling中，同时我们存入这个操作的元数据，结果是这样子的： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling1.PNG" alt="" title=""> <br>
+其中的<strong>TxB</strong>表示translation begin，里面存储了操作的元数据，比如inode、bitmap、datanode的真实目的地址（就是最终要把这些数据存在哪儿）以及某种形式的Transection ID(<strong>TID</strong>)；<strong>TxE</strong>表明transection end，里面当然也包含了TID了。
+那么整个的写入操作的过程是这样的:</p>
+
+<ul><li><strong>Journal write</strong>：将上面提到的那个结果TxB和TxW包装的数据写入磁盘的Journaling区域，并且等候操作的完成；</li>
+<li><strong>Checkpoint</strong>: 将数据写入到它们最终目的地。</li></ul></li>
+<li><p>一个问题 <br>
+上面这么操作可行么？答案是不可以，因为真实写操作的时候，磁盘内部可能因为调度而将写的顺序改变，也就是说并不一定是先写TxB，然后Inode 等等，所以可能出现磁盘除了data block外的结果块写完了，然后再去写data block而在这个过程中挂了。这样一来Journaling就认为希望完成了，而实际上却没有。 <br>
+为了解决这个问题，只能分步写了，见下图： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling2.PNG" alt="" title="">  </p>
+
+<ul><li>Journal write: 写传输内容（包括TxB，metadata以及data），等候完成；</li>
+<li>Journal commit：写TxE，等候完成；</li>
+<li>Checkpoint：同上</li></ul></li>
+<li>Journaling空间管理 <br>
+按照上面的操作，Journaling空间迟早被耗尽，所以怎么办，必须有空间回收机制。所以呢，就把整个Journaling当做一个环形存储，空间到头了就从头开始写。为了便于管理，新增一个Journal Super Block，见下图: <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling3.PNG" alt="" title=""> <br>
+那么什么时候回收呢？很简单，每次checkpoint之后那些数据就没用了，所以就checkpoint之后回收吧。    </li>
+<li>效率？
+按照上面的操作应该是可以执行了，但是效率是个问题，因为每个写操作都需要写两次，第一次写入journaling，然后再写到最终目的地。为了提高效率，就考虑直接将data写入到最终目的地。那么问题来了，什么时候写data。必须在Journal commit之前！！ <br>
+<ul><li>data write:</li>
+<li>Journal metadata write</li>
+<li>Journal commit</li>
+<li>checkpoint metadata</li>
+<li>free
+其实</li></ul></li>
+</ul>
 <!-- content end -->
 </div>
 <br>
