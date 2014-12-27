@@ -1,0 +1,183 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="Keywords" content="blog"/>
+    <meta name="Description" content="blog"/>
+    <title>Simple</title>
+    <link rel="shortcut icon" href="/static/favicon.png"/>
+    <link rel="stylesheet" type="text/css" href="/main.css" />
+</head>
+<body>
+<div class="main">
+    <div class="header">
+    	<ul id="pages">
+            <li><a href="/">home</a></li>
+            <li><a href="/#/tags">tags</a></li>
+            <li><a href="/#/archive">archive</a></li>
+    	</ul>
+    </div>
+	<div class="wrap-header">
+	<h1>
+    <a href="/" id="title"></a>
+	</h1>
+	</div>
+<div id="md" style="display: none;">
+<!-- markdown -->
+不扯淡了，直接来写吧，一天一共要写三篇博客，还有两篇呢。
+##1. 这篇博客讲什么？  
+**Fast File System(FFS)**快速文件系统，基本思想已经在在上一篇博客[ File System Implementation](http://xubenbenhit.github.io/filesystem.html) 里面说明了，**FFS**是对**VSFS**的一种优化改进使其可以被实际使用。
+##2. FFS基于VSFS的改进思想是什么？
+这个呢，**VSFS**在存储文件的时候，根本没有考虑磁盘的寻址时间，把磁盘当做了一种随机存储介质！事实上由于局域性原理的存在，依据局域性而对存储做相应改进是非常有助于性能提升的。**FFS**则正是看到了这一点，其改进是将磁盘划分为多个子区域（**Cylinder Groups**），存储文件的时候同一文件夹下的文件尽可能放在同一个**Group**。**Cylinder Groups**是**FFS**最大的改进来源。
+##3. FFS文件系统的实现
+- 首先，FFS将磁盘划分为很多子区域，也就是很多个Cylinder Groups，如下图：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/ffs/ffs1.PNG)  
+每个组内的结构跟VSFS基本一样，下图：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/ffs/ffs2.PNG)  
+对于这里面的SuperBlock每个组都会有。
+
+- 文件存储
+既然FFS号称利用局域性原理，那么具体是什么操作的呢？
+ - 对于文件夹，它会选择一个包含文件夹少而且剩余的空闲inode数目多的组来存储；
+ - 对于文件，它确保一个文件的inode和data是属于同一个组的；而且，将同一文件夹的文件尽量放在一个组，这里面的“尽量”是考虑到大文件可能需要被存在好几个组。
+ - 大文件
+大文件是需要特殊处理的，因为否则的话因为组内空间被大文件大量占用，这就会使得很难实现“相关文件放一起”的那个使用局域性原理的设计。那么大文件就必须被“分割”为多块分别存储在各个组内，那么如何设定这个切割的大小呢，或者说大文件的每一块设置为多大。    
+这个需要一点计算。设置大文件切割大小核心在于，设置的太小了，那么读取它的时候影响效率（因为是需要额外寻址的，如果太小，这总的传输效率低）。假设磁盘的平均寻址时间是10ms，那么为了达到一半的传输效率，这意思是说磁盘真正用来传数据的时候和寻址时间相同，假设磁盘传输效率是40MB/s，那么10ms传输的数据是409.6KB。换句话说，只需要409KB，就可使的传输效率为50%。事实上，大约3.7MB就可使得磁盘平均传输效率为90%。所以，切割大小设置为4M左右就可以了。  
+FFS的设计者挺聪明的，其实按照之前的VSFS的设计，每个inode里面会有15个块指针用来索引文件占用磁盘块的，前面12个直接索引可表示12*4KB=48KB的空间，而一级间接索引就可表示4M的空间。所以除了前48KB，之后的每4M数据均放置在不同的组内，这个刚好可以使用一一级间接索引表示。
+##4. FFS设计细节
+- 小文件问题
+这个是说很多文件太小了，用一个磁盘块（4KB）存储有点浪费空间啊！！所以呢，FFS引入**sub-blocks**这个概念，一般是512B，也就是一个sector扇区的大小。那么这样一来又会使得写小文件的操作台低效了，哈哈，不用担心，我们可以写文件的时候现在Cache中缓存一下，等到收集了4KB的数据再一次性写入。这就是FFS提供的libc库的作用啦。
+- parameterized placement
+这个呢，有点难理解，先看这个图吧：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/ffs/ffs3.PNG)  
+假设一个这个文斌就包含了12个磁盘块，而且如左边显示的那样存储于一个磁道上面。那么序列读取数据的时候就会有一个很小的问题：当磁头达到0块的时候读取数据，可是等它读完了准备读1块的数据的时候，磁头早就转过去了（假设转到2块的位置），于是需要接着等磁头转回来！！这样是不是很慢，事实上磁盘会将一个磁道的数据一下子缓存在磁盘里面，但是即使是这样，也需要两圈才能读完。因为你在等1快的数据的时候，磁盘转了一圈读出了整个磁道的数据，然后你获得了1块的数据，可是还是需要转一圈才能依次获得每一块的数据。于是乎就很聪明的将数据排列成右边那个样子，这样一来就只需要一圈啦。。。。
+
+---
+
+##5. 参考文献
+>1. http://pages.cs.wisc.edu/~remzi/OSTEP/file-ffs.pdf  
+<!-- markdown end -->
+</div>
+<div class="entry" id="main">
+<!-- content -->
+<p>不扯淡了，直接来写吧，一天一共要写三篇博客，还有两篇呢。</p>
+
+<h2 id="1">1. 这篇博客讲什么？</h2>
+
+<p><strong>Fast File System(FFS)</strong>快速文件系统，基本思想已经在在上一篇博客<a href="http://xubenbenhit.github.io/filesystem.html"> File System Implementation</a> 里面说明了，<strong>FFS</strong>是对<strong>VSFS</strong>的一种优化改进使其可以被实际使用。</p>
+
+<h2 id="2ffsvsfs">2. FFS基于VSFS的改进思想是什么？</h2>
+
+<p>这个呢，<strong>VSFS</strong>在存储文件的时候，根本没有考虑磁盘的寻址时间，把磁盘当做了一种随机存储介质！事实上由于局域性原理的存在，依据局域性而对存储做相应改进是非常有助于性能提升的。<strong>FFS</strong>则正是看到了这一点，其改进是将磁盘划分为多个子区域（<strong>Cylinder Groups</strong>），存储文件的时候同一文件夹下的文件尽可能放在同一个<strong>Group</strong>。<strong>Cylinder Groups</strong>是<strong>FFS</strong>最大的改进来源。</p>
+
+<h2 id="3ffs">3. FFS文件系统的实现</h2>
+
+<ul>
+<li><p>首先，FFS将磁盘划分为很多子区域，也就是很多个Cylinder Groups，如下图： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/ffs/ffs1.PNG" alt="" title=""> <br>
+每个组内的结构跟VSFS基本一样，下图： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/ffs/ffs2.PNG" alt="" title=""> <br>
+对于这里面的SuperBlock每个组都会有。</p></li>
+<li><p>文件存储
+既然FFS号称利用局域性原理，那么具体是什么操作的呢？</p>
+
+<ul><li>对于文件夹，它会选择一个包含文件夹少而且剩余的空闲inode数目多的组来存储；</li>
+<li>对于文件，它确保一个文件的inode和data是属于同一个组的；而且，将同一文件夹的文件尽量放在一个组，这里面的“尽量”是考虑到大文件可能需要被存在好几个组。</li>
+<li>大文件
+大文件是需要特殊处理的，因为否则的话因为组内空间被大文件大量占用，这就会使得很难实现“相关文件放一起”的那个使用局域性原理的设计。那么大文件就必须被“分割”为多块分别存储在各个组内，那么如何设定这个切割的大小呢，或者说大文件的每一块设置为多大。 <br>
+这个需要一点计算。设置大文件切割大小核心在于，设置的太小了，那么读取它的时候影响效率（因为是需要额外寻址的，如果太小，这总的传输效率低）。假设磁盘的平均寻址时间是10ms，那么为了达到一半的传输效率，这意思是说磁盘真正用来传数据的时候和寻址时间相同，假设磁盘传输效率是40MB/s，那么10ms传输的数据是409.6KB。换句话说，只需要409KB，就可使的传输效率为50%。事实上，大约3.7MB就可使得磁盘平均传输效率为90%。所以，切割大小设置为4M左右就可以了。 <br>
+FFS的设计者挺聪明的，其实按照之前的VSFS的设计，每个inode里面会有15个块指针用来索引文件占用磁盘块的，前面12个直接索引可表示12*4KB=48KB的空间，而一级间接索引就可表示4M的空间。所以除了前48KB，之后的每4M数据均放置在不同的组内，这个刚好可以使用一一级间接索引表示。</li></ul></li>
+</ul>
+
+<h2 id="4ffs">4. FFS设计细节</h2>
+
+<ul>
+<li>小文件问题
+这个是说很多文件太小了，用一个磁盘块（4KB）存储有点浪费空间啊！！所以呢，FFS引入<strong>sub-blocks</strong>这个概念，一般是512B，也就是一个sector扇区的大小。那么这样一来又会使得写小文件的操作台低效了，哈哈，不用担心，我们可以写文件的时候现在Cache中缓存一下，等到收集了4KB的数据再一次性写入。这就是FFS提供的libc库的作用啦。</li>
+<li>parameterized placement
+这个呢，有点难理解，先看这个图吧： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/ffs/ffs3.PNG" alt="" title=""> <br>
+假设一个这个文斌就包含了12个磁盘块，而且如左边显示的那样存储于一个磁道上面。那么序列读取数据的时候就会有一个很小的问题：当磁头达到0块的时候读取数据，可是等它读完了准备读1块的数据的时候，磁头早就转过去了（假设转到2块的位置），于是需要接着等磁头转回来！！这样是不是很慢，事实上磁盘会将一个磁道的数据一下子缓存在磁盘里面，但是即使是这样，也需要两圈才能读完。因为你在等1快的数据的时候，磁盘转了一圈读出了整个磁道的数据，然后你获得了1块的数据，可是还是需要转一圈才能依次获得每一块的数据。于是乎就很聪明的将数据排列成右边那个样子，这样一来就只需要一圈啦。。。。</li>
+</ul>
+
+<hr>
+
+<h2 id="5">5. 参考文献</h2>
+
+<blockquote>
+  <ol>
+  <li>http://pages.cs.wisc.edu/~remzi/OSTEP/file-ffs.pdf  </li>
+  </ol>
+</blockquote>
+<!-- content end -->
+</div>
+<br>
+<br>
+    <div id="disqus_thread"></div>
+	<div class="footer">
+		<p>© Copyright 2014 by isnowfy, Designed by isnowfy</p>
+	</div>
+</div>
+<script src="main.js"></script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ["\\(", "\\)"]], processEscapes: true}});
+</script>
+<script id="content" type="text/mustache">
+    <h1>{{title}}</h1>
+    <div class="tag">
+    {{date}}
+    {{#tags}}
+    <a href="/#/tag/{{name}}">#{{name}}</a>
+    {{/tags}}
+    </div>
+</script>
+<script id="pagesTemplate" type="text/mustache">
+    {{#pages}}
+    <li>
+        <a href="{{path}}">{{title}}</a>
+    </li>
+    {{/pages}}
+</script>
+<script>
+$(document).ready(function() {
+    $.ajax({
+        url: "main.json",
+        type: "GET",
+        dataType: "json",
+        success: function(data) {
+            $("#title").html(data.name);
+            var pagesTemplate = Hogan.compile($("#pagesTemplate").html());
+            var pagesHtml = pagesTemplate.render({"pages": data.pages});
+            $("#pages").append(pagesHtml);
+            //path
+            var path = "ffs.html";
+            //path end
+            var now = 0;
+            for (var i = 0; i < data.posts.length; ++i)
+                if (path == data.posts[i].path)
+                    now = i;
+            var post = data.posts[now];
+            var tmp = post.tags.split(" ");
+            var tags = [];
+            for (var i = 0; i < tmp.length; ++i)
+                if (tmp[i].length > 0)
+                    tags.push({"name": tmp[i]});
+            var contentTemplate = Hogan.compile($("#content").html());
+            var contentHtml = contentTemplate.render({"title": post.title, "tags": tags, "date": post.date});
+            $("#main").prepend(contentHtml);
+            if (data.disqus_shortname.length > 0) {
+                var disqus_shortname = data.disqus_shortname;
+                (function() {
+                    var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+                    dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+                    (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+                })();
+            }
+        }
+    });
+});
+</script>
+</body>
+</html>
