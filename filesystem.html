@@ -1,0 +1,143 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="Keywords" content="blog"/>
+    <meta name="Description" content="blog"/>
+    <title>Simple</title>
+    <link rel="shortcut icon" href="/static/favicon.png"/>
+    <link rel="stylesheet" type="text/css" href="/main.css" />
+</head>
+<body>
+<div class="main">
+    <div class="header">
+    	<ul id="pages">
+            <li><a href="/">home</a></li>
+            <li><a href="/#/tags">tags</a></li>
+            <li><a href="/#/archive">archive</a></li>
+    	</ul>
+    </div>
+	<div class="wrap-header">
+	<h1>
+    <a href="/" id="title"></a>
+	</h1>
+	</div>
+<div id="md" style="display: none;">
+<!-- markdown -->
+先来扯淡吧，上一篇文章说到要补习的第二篇文章介绍文件系统的，现在就来写吧。其实这些技术都已经是很久以前的了，但是不管怎么样，是基础，慢慢来学习吧。有种直接上Spark源码的冲动。。
+##1. 这篇博客具体什么内容？
+这篇博客是一篇文件系统入门文章，介绍一种概念上的文件系统，**VSFS(Very Simple File System)**。
+##2. 文件系统是什么？
+文件系统，首先是单纯的软件，因此不会涉及到使用机器硬件特征来优化文件系统；其次，它主要包含两方面内容，什么样的结构来组织文件，怎么利用这种文件结构来完成读写删除操作。
+##3. 建立VSFS文件系统
+　　磁盘的最小存储单位是扇区(**Sector**)，首先将磁盘划分为一个个磁盘块(**Block**)，每个块大小4KB，于是我们获得了这样的磁盘空间：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/vsfs/vsfs1.jpg)  
+　　其次将这64个磁盘块的后56个磁盘块作为存储真实文件数据的区域，称为数据块(**Data Region**)，此外，为了方便查看文件的属性等元数据，我们为每个文件建立一个inode（256Byte），然后将所有文件的inode统一组织起来放在磁盘的固定区域，在这里我们将其放在3-7这5个磁盘块(**Inodes**)：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/vsfs/vsfs2.jpg)  
+　　在这里，每个inode占用256Byte的空间，而一共是5*4Kb，故而我们一共最多可以存储80个inode，也就是说我们这个小型简单文件系统最多存储80个文件。  
+　　此外，为了便于磁盘管理，我们使用位标记为来标注Data Region 和 Inodes区域的使用情况（假设如果使用则设置，位为1，否则为0），为此分别占用1和2这两个磁盘，分别称为**inode bitmap**和**data bitmap**。  
+　　最后，我们需要一个磁盘块来存储整个文件系统的原信息(称之为**SuperBlock**)，包括系统管理的数据规模、文件数目、inode区域起始物理地址等等吧。于是最终我们的文件系统磁盘占用是这样的：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/vsfs/vsfs3.jpg)  
+　　我们这个文件系统接入到操作系统之后，操作系统会首先根据**SuperBlock**来初始化一些参数，然后将这个文件系统接入到操作系统的文件系统树上面去。   
+##3.VSFS文件系统各部分具体实现
+
+　　
+<!-- markdown end -->
+</div>
+<div class="entry" id="main">
+<!-- content -->
+<p>先来扯淡吧，上一篇文章说到要补习的第二篇文章介绍文件系统的，现在就来写吧。其实这些技术都已经是很久以前的了，但是不管怎么样，是基础，慢慢来学习吧。有种直接上Spark源码的冲动。。</p>
+
+<h2 id="1">1. 这篇博客具体什么内容？</h2>
+
+<p>这篇博客是一篇文件系统入门文章，介绍一种概念上的文件系统，<strong>VSFS(Very Simple File System)</strong>。</p>
+
+<h2 id="2">2. 文件系统是什么？</h2>
+
+<p>文件系统，首先是单纯的软件，因此不会涉及到使用机器硬件特征来优化文件系统；其次，它主要包含两方面内容，什么样的结构来组织文件，怎么利用这种文件结构来完成读写删除操作。</p>
+
+<h2 id="3vsfs">3. 建立VSFS文件系统</h2>
+
+<p>　　磁盘的最小存储单位是扇区(<strong>Sector</strong>)，首先将磁盘划分为一个个磁盘块(<strong>Block</strong>)，每个块大小4KB，于是我们获得了这样的磁盘空间： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/vsfs/vsfs1.jpg" alt="" title=""> <br>
+　　其次将这64个磁盘块的后56个磁盘块作为存储真实文件数据的区域，称为数据块(<strong>Data Region</strong>)，此外，为了方便查看文件的属性等元数据，我们为每个文件建立一个inode（256Byte），然后将所有文件的inode统一组织起来放在磁盘的固定区域，在这里我们将其放在3-7这5个磁盘块(<strong>Inodes</strong>)： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/vsfs/vsfs2.jpg" alt="" title=""> <br>
+　　在这里，每个inode占用256Byte的空间，而一共是5*4Kb，故而我们一共最多可以存储80个inode，也就是说我们这个小型简单文件系统最多存储80个文件。 <br>
+　　此外，为了便于磁盘管理，我们使用位标记为来标注Data Region 和 Inodes区域的使用情况（假设如果使用则设置，位为1，否则为0），为此分别占用1和2这两个磁盘，分别称为<strong>inode bitmap</strong>和<strong>data bitmap</strong>。 <br>
+　　最后，我们需要一个磁盘块来存储整个文件系统的原信息(称之为<strong>SuperBlock</strong>)，包括系统管理的数据规模、文件数目、inode区域起始物理地址等等吧。于是最终我们的文件系统磁盘占用是这样的： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/vsfs/vsfs3.jpg" alt="" title=""> <br>
+　　我们这个文件系统接入到操作系统之后，操作系统会首先根据<strong>SuperBlock</strong>来初始化一些参数，然后将这个文件系统接入到操作系统的文件系统树上面去。   </p>
+
+<h2 id="3vsfs">3.VSFS文件系统各部分具体实现</h2>
+<!-- content end -->
+</div>
+<br>
+<br>
+    <div id="disqus_thread"></div>
+	<div class="footer">
+		<p>© Copyright 2014 by isnowfy, Designed by isnowfy</p>
+	</div>
+</div>
+<script src="main.js"></script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ["\\(", "\\)"]], processEscapes: true}});
+</script>
+<script id="content" type="text/mustache">
+    <h1>{{title}}</h1>
+    <div class="tag">
+    {{date}}
+    {{#tags}}
+    <a href="/#/tag/{{name}}">#{{name}}</a>
+    {{/tags}}
+    </div>
+</script>
+<script id="pagesTemplate" type="text/mustache">
+    {{#pages}}
+    <li>
+        <a href="{{path}}">{{title}}</a>
+    </li>
+    {{/pages}}
+</script>
+<script>
+$(document).ready(function() {
+    $.ajax({
+        url: "main.json",
+        type: "GET",
+        dataType: "json",
+        success: function(data) {
+            $("#title").html(data.name);
+            var pagesTemplate = Hogan.compile($("#pagesTemplate").html());
+            var pagesHtml = pagesTemplate.render({"pages": data.pages});
+            $("#pages").append(pagesHtml);
+            //path
+            var path = "filesystem.html";
+            //path end
+            var now = 0;
+            for (var i = 0; i < data.posts.length; ++i)
+                if (path == data.posts[i].path)
+                    now = i;
+            var post = data.posts[now];
+            var tmp = post.tags.split(" ");
+            var tags = [];
+            for (var i = 0; i < tmp.length; ++i)
+                if (tmp[i].length > 0)
+                    tags.push({"name": tmp[i]});
+            var contentTemplate = Hogan.compile($("#content").html());
+            var contentHtml = contentTemplate.render({"title": post.title, "tags": tags, "date": post.date});
+            $("#main").prepend(contentHtml);
+            if (data.disqus_shortname.length > 0) {
+                var disqus_shortname = data.disqus_shortname;
+                (function() {
+                    var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+                    dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+                    (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+                })();
+            }
+        }
+    });
+});
+</script>
+</body>
+</html>
