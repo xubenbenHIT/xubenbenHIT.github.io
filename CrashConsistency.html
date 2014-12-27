@@ -57,15 +57,36 @@
 - Journaling空间管理  
 按照上面的操作，Journaling空间迟早被耗尽，所以怎么办，必须有空间回收机制。所以呢，就把整个Journaling当做一个环形存储，空间到头了就从头开始写。为了便于管理，新增一个Journal Super Block，见下图:  
 ![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling3.PNG)  
-那么什么时候回收呢？很简单，每次checkpoint之后那些数据就没用了，所以就checkpoint之后回收吧。    
+那么什么时候回收呢？很简单，每次checkpoint之后那些数据就没用了，所以就checkpoint之后回收吧。    以上这种叫做data journaling。
+
+- data journaling总体执行顺序
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling5.PNG)
 - 效率？
-按照上面的操作应该是可以执行了，但是效率是个问题，因为每个写操作都需要写两次，第一次写入journaling，然后再写到最终目的地。为了提高效率，就考虑直接将data写入到最终目的地。那么问题来了，什么时候写data。必须在Journal commit之前！！  
+按照上面的操作应该是可以执行了，但是效率是个问题，因为每个写操作都需要写两次，第一次写入journaling，然后再写到最终目的地。为了提高效率，就考虑直接将data写入到最终目的地。那么问题来了，什么时候写data。必须在Journal commit之前！！  这种叫做metadata journaling。
  - data write:
  - Journal metadata write
  - Journal commit
  - checkpoint metadata
  - free
-其实
+
+- metadata journaling总体执行顺序
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling6.PNG) 
+
+
+- 一个很玄乎的错误
+这个错误是这样的，对于metadata journaling适用。磁盘地址1000出存储了文件夹foo的数据；此时，在这个文件夹下创建一个新文件，于是需要将文件夹foo的数据（这是metadata哦）做修改；然后，删除文件夹foo以及其包含的所有文件；然后写文件foobar，目的地址恰好也是在block1那边，于是一切正常；注意第一步第三步操作都没有被checkpoint，而第二步压根不需要Journaling。此时机器故障了，那么重启之后根据Journaling数据恢复，此时的Journaling是这样的：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling4.PNG) 
+恢复的时候首先checkpoint第一步操作，于是将“修改后的文件夹数据”写入地位为1000的block；接着checkpoint文件foobar，由于是metadata journaling，所以foobar的数据本身是没有的，只有metadata。于是乎，foobar的数据永远丢失了~~~  
+那么怎么处理这个问题呢？  
+有两种方法：  
+
+  - 只有当被删除的block被从journal中checkpoint之后才去使用；也就是说block被删除之后，如果此时journal中还有关于这个block的操作没有被checkpoint，则不用这个block。
+  - 每次删除block后，将Journal中关于这个block的操作设置为**revoked**，那么恢复的时候，跳过所有的**revoked**操作。
+
+终于写完了~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+---
+##5. 参考资料
+>1. http://pages.cs.wisc.edu/~remzi/OSTEP/file-journaling.pdf
 <!-- markdown end -->
 </div>
 <div class="entry" id="main">
@@ -108,19 +129,42 @@
 <ul><li>Journal write: 写传输内容（包括TxB，metadata以及data），等候完成；</li>
 <li>Journal commit：写TxE，等候完成；</li>
 <li>Checkpoint：同上</li></ul></li>
-<li>Journaling空间管理 <br>
+<li><p>Journaling空间管理 <br>
 按照上面的操作，Journaling空间迟早被耗尽，所以怎么办，必须有空间回收机制。所以呢，就把整个Journaling当做一个环形存储，空间到头了就从头开始写。为了便于管理，新增一个Journal Super Block，见下图: <br>
 <img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling3.PNG" alt="" title=""> <br>
-那么什么时候回收呢？很简单，每次checkpoint之后那些数据就没用了，所以就checkpoint之后回收吧。    </li>
-<li>效率？
-按照上面的操作应该是可以执行了，但是效率是个问题，因为每个写操作都需要写两次，第一次写入journaling，然后再写到最终目的地。为了提高效率，就考虑直接将data写入到最终目的地。那么问题来了，什么时候写data。必须在Journal commit之前！！ <br>
+那么什么时候回收呢？很简单，每次checkpoint之后那些数据就没用了，所以就checkpoint之后回收吧。    以上这种叫做data journaling。</p></li>
+<li><p>data journaling总体执行顺序
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling5.PNG" alt="" title=""></p></li>
+<li><p>效率？
+按照上面的操作应该是可以执行了，但是效率是个问题，因为每个写操作都需要写两次，第一次写入journaling，然后再写到最终目的地。为了提高效率，就考虑直接将data写入到最终目的地。那么问题来了，什么时候写data。必须在Journal commit之前！！  这种叫做metadata journaling。</p>
+
 <ul><li>data write:</li>
 <li>Journal metadata write</li>
 <li>Journal commit</li>
 <li>checkpoint metadata</li>
-<li>free
-其实</li></ul></li>
+<li>free</li></ul></li>
+<li><p>metadata journaling总体执行顺序
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling6.PNG" alt="" title=""> </p></li>
+<li><p>一个很玄乎的错误
+这个错误是这样的，对于metadata journaling适用。磁盘地址1000出存储了文件夹foo的数据；此时，在这个文件夹下创建一个新文件，于是需要将文件夹foo的数据（这是metadata哦）做修改；然后，删除文件夹foo以及其包含的所有文件；然后写文件foobar，目的地址恰好也是在block1那边，于是一切正常；注意第一步第三步操作都没有被checkpoint，而第二步压根不需要Journaling。此时机器故障了，那么重启之后根据Journaling数据恢复，此时的Journaling是这样的： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/consistencyandjournaling/journaling4.PNG" alt="" title=""> 
+恢复的时候首先checkpoint第一步操作，于是将“修改后的文件夹数据”写入地位为1000的block；接着checkpoint文件foobar，由于是metadata journaling，所以foobar的数据本身是没有的，只有metadata。于是乎，foobar的数据永远丢失了~~~ <br>
+那么怎么处理这个问题呢？ <br>
+有两种方法：  </p>
+
+<ul><li>只有当被删除的block被从journal中checkpoint之后才去使用；也就是说block被删除之后，如果此时journal中还有关于这个block的操作没有被checkpoint，则不用这个block。</li>
+<li>每次删除block后，将Journal中关于这个block的操作设置为<strong>revoked</strong>，那么恢复的时候，跳过所有的<strong>revoked</strong>操作。</li></ul></li>
 </ul>
+
+<h2 id="tttttttttttttttttttttttttttt">终于写完了~~~~~~~~~~~~~~~~~~~~~~~~~~~~</h2>
+
+<h2 id="5">5. 参考资料</h2>
+
+<blockquote>
+  <ol>
+  <li>http://pages.cs.wisc.edu/~remzi/OSTEP/file-journaling.pdf</li>
+  </ol>
+</blockquote>
 <!-- content end -->
 </div>
 <br>
