@@ -28,6 +28,18 @@
 接着上一篇博客[Distributed Systems 分布式系统](http://xubenbenhit.github.io/IntroToDistSystem.html)来扯淡，之前的博客一再在写文件系统，这次继续，只不过是分布式文件系统。
 ##1. 这篇文章讲什么
 这篇文章介绍一种分布式文件系统，名字叫Network File Sytem(**NFS**)，翻译过来就是网络文件系统。**NFS**是一种分布式文件系统，大概的样子是这样的：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs1.jpg)  
+这里多说一句，NFS可不是仅仅指图中那个server，它包含了图中的所有部件 ，client中也有NFS的组件。  
+在细一点看client与server之间的数据通信，是这样子的:  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs2.jpg)  
+现在大概知道NFS的基本架构了吧。下面开始具体介绍了。
+
+##2. NFS的设计目标
+每一种文件系统的设计都有它自己的考虑，**NFS**的主要考虑是**简单而快速的故障恢复**。这可能考虑到分布式系统因为机器多，故而故障是经常发生的。况且，这里面只有一个server，而server是系统的核心，这个server一旦出问题怎么办。
+
+##3. 基本设计思路
+有了基本的设计，那就到了具体的设计环节了，如何达到目的呢？快速恢复要求“隔离”，也就是说系统各个部件之间尽量减少“共享信息”，因为有了共享信息，恢复起来也就复杂了。  
+Client和Server之间的发生的操作主要是读写，按照一般的
 
 <!-- markdown end -->
 </div>
@@ -37,7 +49,21 @@
 
 <h2 id="1">1. 这篇文章讲什么</h2>
 
-<p>这篇文章介绍一种分布式文件系统，名字叫Network File Sytem(<strong>NFS</strong>)，翻译过来就是网络文件系统。<strong>NFS</strong>是一种分布式文件系统，大概的样子是这样的：  </p>
+<p>这篇文章介绍一种分布式文件系统，名字叫Network File Sytem(<strong>NFS</strong>)，翻译过来就是网络文件系统。<strong>NFS</strong>是一种分布式文件系统，大概的样子是这样的： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs1.jpg" alt="" title=""> <br>
+这里多说一句，NFS可不是仅仅指图中那个server，它包含了图中的所有部件 ，client中也有NFS的组件。 <br>
+在细一点看client与server之间的数据通信，是这样子的: <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs2.jpg" alt="" title=""> <br>
+现在大概知道NFS的基本架构了吧。下面开始具体介绍了。</p>
+
+<h2 id="2nfs">2. NFS的设计目标</h2>
+
+<p>每一种文件系统的设计都有它自己的考虑，<strong>NFS</strong>的主要考虑是<strong>简单而快速的故障恢复</strong>。这可能考虑到分布式系统因为机器多，故而故障是经常发生的。况且，这里面只有一个server，而server是系统的核心，这个server一旦出问题怎么办。</p>
+
+<h2 id="3">3. 基本设计思路</h2>
+
+<p>有了基本的设计，那就到了具体的设计环节了，如何达到目的呢？快速恢复要求“隔离”，也就是说系统各个部件之间尽量减少“共享信息”，因为有了共享信息，恢复起来也就复杂了。 <br>
+Client和Server之间的发生的操作主要是读写，按照一般的</p>
 <!-- content end -->
 </div>
 <br>
