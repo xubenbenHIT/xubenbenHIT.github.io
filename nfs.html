@@ -37,9 +37,28 @@
 ##2. NFS的设计目标
 每一种文件系统的设计都有它自己的考虑，**NFS**的主要考虑是**简单而快速的故障恢复**。这可能考虑到分布式系统因为机器多，故而故障是经常发生的。况且，这里面只有一个server，而server是系统的核心，这个server一旦出问题怎么办。
 
-##3. 基本设计思路
+##3. 核心设计思路
 有了基本的设计，那就到了具体的设计环节了，如何达到目的呢？快速恢复要求“隔离”，也就是说系统各个部件之间尽量减少“共享信息”，因为有了共享信息，恢复起来也就复杂了。  
-Client和Server之间的发生的操作主要是读写，按照一般的
+Client和Server之间的发生的操作主要是读写，因为读写一般都不是一次性完成的，需要多次操作，那么有两种方式，一种是双方之间保存读取状态，也就是说server保存了每个client的读取状态记录，比如说读到文件的哪个位置了，这种方式称之为**stateful**；还有一种是 **stateless**，也就是说server跟client之间没有什么共享信息，server压根就不知道client读取到了文件的什么位置，每次client读取数据，都是自己提供完整的参数，server按照提供的参数进行操作、返回结果就好了。  
+那么基于设计目标来看的话，第一种方式不是一个好的选择，很大的一个缺点就是client或者server宕机了的话怎么处理，是不是还得同步一下状态，client的话还好说，server恢复过程中还额外需要恢复跟各个client之间的共享状态，简直复杂啊！！所以**NFS**选择第二种方式，**用户操作指令提供server完成操作所需的所有信息**，简单直白效率高。  
+事实上这是**NFS**的核心设计思路。
+
+##3. 具体系统设计
+
+- 命名空间  
+文件按照层次结构存储，文件夹，文件。那么首先一个问题就是系统怎么唯一标示一个文件（文件夹也是一种“文件”），一般而言文件的inode是唯一的，故而可用它来唯一标示。**NFS**也是这么做的，但是又补充了两个参量，首先一个是卷标示符(**volume identifier**)，还有一个版本号(**generation number**)。卷标示符主要是考虑到扩展，因为**NFS**可以支持多个文件系统（server端的数据存储使用文件系统具体存储文件，可以包含多种文件系统，为了便与区别，称之为**子文件系统**）；版本号就容易理解了，为了确定文件是否是最新版本。  
+卷标示符、inode number以及版本号共同组成了文件的唯一标识，称之为**File handle**。  
+
+- 怎么寻找文件的File handle呢   
+举个例子，我们需要操作文件/foo.txt，那么首先需要找到这个文件的FIle handle。**根目录的FIle handle在子文件系统介入NFS中的时候就已经或者，可以认为是已知**。client向server发送根目录'/'的file handle以及文件名foo.txt查询foo.txt的File handle，server查找并返回。如此便获得了文件的File handle了。可以想象，每多增加一级目录就需要多一次查询。
+
+- NFS的操作命令  
+下面的是NFS的一些样例操作命令：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs3.jpg)  
+可以看到常见的文件读、写、创建、删除以及文件夹的创建、删除；LOOKUP用来执行前面提到的查询文件File Handle操作，GETATTR用来获得文件的属性（包括当前版本号啊，啥的）。下面看看具体操作样例：  
+![](http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs4.jpg)    
+
+
 
 <!-- markdown end -->
 </div>
@@ -60,10 +79,27 @@ Client和Server之间的发生的操作主要是读写，按照一般的
 
 <p>每一种文件系统的设计都有它自己的考虑，<strong>NFS</strong>的主要考虑是<strong>简单而快速的故障恢复</strong>。这可能考虑到分布式系统因为机器多，故而故障是经常发生的。况且，这里面只有一个server，而server是系统的核心，这个server一旦出问题怎么办。</p>
 
-<h2 id="3">3. 基本设计思路</h2>
+<h2 id="3">3. 核心设计思路</h2>
 
 <p>有了基本的设计，那就到了具体的设计环节了，如何达到目的呢？快速恢复要求“隔离”，也就是说系统各个部件之间尽量减少“共享信息”，因为有了共享信息，恢复起来也就复杂了。 <br>
-Client和Server之间的发生的操作主要是读写，按照一般的</p>
+Client和Server之间的发生的操作主要是读写，因为读写一般都不是一次性完成的，需要多次操作，那么有两种方式，一种是双方之间保存读取状态，也就是说server保存了每个client的读取状态记录，比如说读到文件的哪个位置了，这种方式称之为<strong>stateful</strong>；还有一种是 <strong>stateless</strong>，也就是说server跟client之间没有什么共享信息，server压根就不知道client读取到了文件的什么位置，每次client读取数据，都是自己提供完整的参数，server按照提供的参数进行操作、返回结果就好了。 <br>
+那么基于设计目标来看的话，第一种方式不是一个好的选择，很大的一个缺点就是client或者server宕机了的话怎么处理，是不是还得同步一下状态，client的话还好说，server恢复过程中还额外需要恢复跟各个client之间的共享状态，简直复杂啊！！所以<strong>NFS</strong>选择第二种方式，<strong>用户操作指令提供server完成操作所需的所有信息</strong>，简单直白效率高。 <br>
+事实上这是<strong>NFS</strong>的核心设计思路。</p>
+
+<h2 id="3">3. 具体系统设计</h2>
+
+<ul>
+<li><p>命名空间 <br>
+文件按照层次结构存储，文件夹，文件。那么首先一个问题就是系统怎么唯一标示一个文件（文件夹也是一种“文件”），一般而言文件的inode是唯一的，故而可用它来唯一标示。<strong>NFS</strong>也是这么做的，但是又补充了两个参量，首先一个是卷标示符(<strong>volume identifier</strong>)，还有一个版本号(<strong>generation number</strong>)。卷标示符主要是考虑到扩展，因为<strong>NFS</strong>可以支持多个文件系统（server端的数据存储使用文件系统具体存储文件，可以包含多种文件系统，为了便与区别，称之为<strong>子文件系统</strong>）；版本号就容易理解了，为了确定文件是否是最新版本。 <br>
+卷标示符、inode number以及版本号共同组成了文件的唯一标识，称之为<strong>File handle</strong>。  </p></li>
+<li><p>怎么寻找文件的File handle呢 <br>
+举个例子，我们需要操作文件/foo.txt，那么首先需要找到这个文件的FIle handle。<strong>根目录的FIle handle在子文件系统介入NFS中的时候就已经或者，可以认为是已知</strong>。client向server发送根目录'/'的file handle以及文件名foo.txt查询foo.txt的File handle，server查找并返回。如此便获得了文件的File handle了。可以想象，每多增加一级目录就需要多一次查询。</p></li>
+<li><p>NFS的操作命令 <br>
+下面的是NFS的一些样例操作命令： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs3.jpg" alt="" title=""> <br>
+可以看到常见的文件读、写、创建、删除以及文件夹的创建、删除；LOOKUP用来执行前面提到的查询文件File Handle操作，GETATTR用来获得文件的属性（包括当前版本号啊，啥的）。下面看看具体操作样例： <br>
+<img src="http://7te99v.com1.z0.glb.clouddn.com/@/blog/nfs/nfs4.jpg" alt="" title="">    </p></li>
+</ul>
 <!-- content end -->
 </div>
 <br>
